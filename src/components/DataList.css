@@ -1,0 +1,64 @@
+.data-list-container {
+  font-family: "Poppins", sans-serif;
+  padding: 30px;
+  text-align: center;
+  color: #1a1a1a;
+}
+
+h2 {
+  margin-bottom: 20px;
+  font-size: 1.5rem;
+  color: #0073ff;
+}
+
+.data-table {
+  width: 80%;
+  margin: 0 auto;
+  border-collapse: collapse;
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 6px 12px rgba(0,0,0,0.08);
+  background: white;
+}
+
+.data-table th,
+.data-table td {
+  padding: 12px 16px;
+  text-align: center;
+  border-bottom: 1px solid #ddd;
+  transition: background 0.3s, transform 0.2s;
+}
+
+.data-table th {
+  background-color: #0073ff;
+  color: #fff;
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.data-table tr:nth-child(even) {
+  background-color: #f2f9ff;
+}
+
+.data-table tr:hover {
+  background-color: #e0f2ff;
+  transform: scale(1.01);
+}
+
+.no-data {
+  font-style: italic;
+  color: #666;
+  text-align: center;
+  margin-top: 20px;
+}
+
+/* Highlight male/female rows differently when showing percentages */
+.data-table td[data-sex="Male"] {
+  color: #1a73e8;
+  font-weight: 600;
+}
+
+.data-table td[data-sex="Female"] {
+  color: #e91e63;
+  font-weight: 600;
+}
