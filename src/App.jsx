@@ -2,132 +2,177 @@ import { useState, useEffect } from 'react'
 import './App.css'
 import Card from "./components/Card.jsx";
 import DataList from "./components/DataList.jsx"; 
-const ACCESS_KEY = import.meta.env.VITE_APP_ACCESS_KEY;
 
+
+const ACCESS_KEY = import.meta.env.VITE_APP_ACCESS_KEY;
+//API INFO HERE:
+//https://www.census.gov/data/developers/data-sets/international-database.html
 function App() {
   const [data, setData] = useState([]); 
   const [search, setSearch] = useState("");
+  const [population, setPopulation] = useState(0); 
+  const [numCountries, setNumCountries] = useState(0); 
+  const [avgPop, setAvgPop] = useState(0); 
+  const [sortBy, setSortBy] = useState("population-desc");
+  const [year, setYear] = useState(2023); // default year
 
     // Controlled state for age range
   const [ageRange, setAgeRange] = useState({ min: 0, max: 100 });
-
-  // Controlled state for sex
-  // 0 = All, 1 = Male, 2 = Female
-  const [sex, setSex] = useState(0);
 
   //Function/useEffect to reload the data upon search/filter changes
   useEffect(() => {
     const query = makeQuery();
     callAPI(query).catch(console.error);
-  }, [sex, ageRange])
+  }, [ageRange, year])
 
   //Function to call the API using the query
   const callAPI = async (query) => {
     try {
     const response = await fetch(query);
     const json = await response.json();
-    const summarizedData = summarizeData(json,sex );
+    const summarizedData = summarizeData(json);
     setData(summarizedData)
     }
     catch (err) {
     console.error("Failed to fetch/parse API:", err);
-    alert("Error fetching images");
+    alert("Error fetching data");
     }
   }
 
   //Function to make the query, should adapt to filters and searches
   const makeQuery = () => {
-    // Age range
-    const ageParam = `${ageRange.min}:${ageRange.max}`; // e.g., "0:100"
+  const ageParam = `${ageRange.min}:${ageRange.max}`;
+  const years = year;
 
-    // Sex: 0 = All, 1 = Male, 2 = Female
-    // For "All", we need "0,1,2" per Census API
-    const sexParam = sex === 0 ? "0,1,2" : sex.toString();
-
-    // Countries (example, you can make this dynamic too)
-    // const countries = "BW,NO"; // Botswana and Norway
-    //const forParam = `genc+standard+countries+and+areas:${countries}`;
-
-    // Years (example: 2023 and 2024)
-    const years = "2023,2024";
-
-    // Construct full query
-    const query = `https://api.census.gov/data/timeseries/idb/1year?get=NAME,GENC,POP&YR=${years}&AGE=${ageParam}&SEX=${sexParam}&key=${ACCESS_KEY}`;
-
-    return query;
+  // Request all sexes (0 = both, 1 = male, 2 = female)
+  const query = `https://api.census.gov/data/timeseries/idb/1year?get=NAME,GENC,POP,SEX&YR=${years}&AGE=${ageParam}&SEX=0,1,2&key=${ACCESS_KEY}`;
+  
+  return query;
   };
 
   //Function to summarize the data
-const summarizeData = (data, sexFilter) => {
-  // Skip header row
-  const rows = data.slice(1);
+const summarizeData = (data) => {
+  const rows = data.slice(1); // Skip header row
 
-  // Group by country
   const grouped = rows.reduce((acc, row) => {
     const country = row[0]; // NAME
+    const code = row[1]; // GENC (country code)
     const pop = Number(row[2]); // POP
-    const sex = Number(row[5]); // SEX column: 0=both, 1=male, 2=female
+    const sex = Number(row[3]); // SEX
 
     if (!acc[country]) {
-      acc[country] = { country, male: 0, female: 0 };
+      acc[country] = {
+        country,
+        code, // store GENC code
+        malePop: 0,
+        femalePop: 0,
+        totalPop: 0,
+      };
     }
 
-    // Add population to male/female
-    if (sex === 1) acc[country].male += pop;
-    else if (sex === 2) acc[country].female += pop;
-    else if (sex === 0) {
-      // Some API rows may have total in SEX column
-      acc[country].male += pop / 2;
-      acc[country].female += pop / 2;
-    }
+    if (sex === 1) acc[country].malePop += pop;
+    else if (sex === 2) acc[country].femalePop += pop;
+    else if (sex === 0) acc[country].totalPop += pop;
 
     return acc;
   }, {});
 
-  // Build result array
-  const result = [];
+  return Object.values(grouped).map((c) => {
+    const total = c.totalPop || c.malePop + c.femalePop;
+    const malePct = total > 0 ? ((c.malePop / total) * 100).toFixed(1) + "%" : "0%";
+    const femalePct = total > 0 ? ((c.femalePop / total) * 100).toFixed(1) + "%" : "0%";
 
-  Object.values(grouped).forEach((c) => {
-    const total = c.male + c.female;
-
-    if (sexFilter === 0) {
-      // Both selected: show total and percentages
-      result.push(
-        { country: c.country, sex: "Total", population: total },
-        { country: c.country, sex: "Male", population: ((c.male / total) * 100).toFixed(1) + "%" },
-        { country: c.country, sex: "Female", population: ((c.female / total) * 100).toFixed(1) + "%" }
-      );
-    } else if (sexFilter === 1) {
-      result.push({ country: c.country, sex: "Male", population: c.male });
-    } else if (sexFilter === 2) {
-      result.push({ country: c.country, sex: "Female", population: c.female });
-    }
+    return {
+      country: c.country,
+      code: c.code, // Include country code
+      population: total,
+      male: malePct,
+      female: femalePct,
+    };
   });
-
-  return result;
 };
 
-  //Summary statistics
-  const population = sex === 0
-    ? data
-        .filter(d => d.sex === "Total") // only total rows
-        .reduce((acc, d) => acc + d.population, 0)
-    : data.reduce((acc, d) => acc + d.population, 0);
-
-  // Number of unique countries
-  const numCountries = new Set(data.map(d => d.country)).size;
-
-  // Average population per country (based on totals if sex=0, or sum of selected sex)
-  const avgPopulation = Math.round(population / numCountries)
-  
-const filteredData = search !== ""
+  //Filter data for search
+  const filteredData = search !== ""
   ? data.filter(d => d.country.toLowerCase().includes(search.toLowerCase()))
   : data;
 
-useEffect(()=>{
-  setData(filteredData)
-}, [filteredData])
-  console.log(data); 
+  //Summary statistics
+ useEffect(() => {
+  const totalPopulation = filteredData.reduce((acc, d) => acc + d.population, 0);
+  const countriesCount = new Set(filteredData.map(d => d.country)).size;
+  const average = countriesCount > 0 ? Math.round(totalPopulation / countriesCount) : 0;
+
+  setPopulation(totalPopulation);
+  setNumCountries(countriesCount);
+  setAvgPop(average);
+}, [filteredData]);
+  
+
+// helper: safely parse "48.5%" -> 48.5, or return NaN if not a percent string
+const parsePercentString = (str) => {
+  if (typeof str === "string" && str.includes("%")) {
+    const n = parseFloat(str.replace("%", ""));
+    return Number.isFinite(n) ? n : NaN;
+  }
+  return NaN;
+};
+
+// helper: return percentage value (0..100) for male/female comparison
+const getPercentageValue = (item, key) => {
+  // key is "male" or "female"
+  // 1) if the field is already a percent string (e.g. "48.5%"), use it
+  const maybePercent = parsePercentString(item[key]);
+  if (!Number.isNaN(maybePercent)) return maybePercent;
+
+  // 2) if the field is a plain number but you have population or total counts,
+  // compute percent = (value / total) * 100
+  const rawVal = Number(item[key]);
+  const total = Number(item.population) || Number(item.total) || (
+    // fallback: if you stored malePop/femalePop numeric fields, compute total
+    Number(item.malePop || 0) + Number(item.femalePop || 0)
+  );
+
+  if (Number.isFinite(rawVal) && total > 0) {
+    return (rawVal / total) * 100;
+  }
+
+  // 3) fallback to 0 to avoid NaN during sorting
+  return 0;
+};
+
+// Now the sortedData:
+const sortedData = [...filteredData].sort((a, b) => {
+  // numeric accessor for population (works if population is string or number)
+  const parseNum = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+
+  // determine comparator key
+  if (sortBy.startsWith("population")) {
+    const aVal = parseNum(a.population);
+    const bVal = parseNum(b.population);
+    return sortBy.endsWith("-asc") ? aVal - bVal : bVal - aVal;
+  }
+
+  if (sortBy.startsWith("male")) {
+    const aPct = getPercentageValue(a, "male");
+    const bPct = getPercentageValue(b, "male");
+    return sortBy.endsWith("-asc") ? aPct - bPct : bPct - aPct;
+  }
+
+  if (sortBy.startsWith("female")) {
+    const aPct = getPercentageValue(a, "female");
+    const bPct = getPercentageValue(b, "female");
+    return sortBy.endsWith("-asc") ? aPct - bPct : bPct - aPct;
+  }
+
+  // fallback: sort by country name
+  return a.country.localeCompare(b.country);
+});
+  
+
   return (
     <div>
       <h1>WorldCensus API</h1>
@@ -135,12 +180,23 @@ useEffect(()=>{
       <div className="card-row">
         <Card key={1} title="Total Population" data={population} />
         <Card key={2} title="Number of Countries" data={numCountries} />
-        <Card key={3} title="Average Population" data={avgPopulation} />
+        <Card key={3} title="Average Population" data={avgPop} />
       </div>
        <div className="filters">
         {/* Age Range Inputs */}
         <div className="filter-group">
           <div className="search-bar">
+            <label>
+              Year:
+              <input
+                type="number"
+                min="1950"
+                max="2100"
+                value={year}
+                onChange={(e) => setYear(Number(e.target.value))}
+                className="filter-input"
+              />
+            </label>
             <label>
               Search Country:
               <input
@@ -156,6 +212,8 @@ useEffect(()=>{
             Min Age:
             <input
               type="number"
+               min={0}           
+              max={100} 
               value={ageRange.min}
               onChange={(e) =>
                 setAgeRange({ ...ageRange, min: Number(e.target.value) })
@@ -167,6 +225,8 @@ useEffect(()=>{
             Max Age:
             <input
               type="number"
+              min={0}           
+              max={100} 
               value={ageRange.max}
               onChange={(e) =>
                 setAgeRange({ ...ageRange, max: Number(e.target.value) })
@@ -174,23 +234,26 @@ useEffect(()=>{
               className="filter-input"
             />
           </label>
+          <label>
+          Sort by:
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value)}
+            className="filter-input"
+          >
+            <option value="population-desc">Total Population (High → Low)</option>
+            <option value="population-asc">Total Population (Low → High)</option>
+            <option value="male-desc">Male % (High → Low)</option>
+            <option value="male-asc">Male % (Low → High)</option>
+            <option value="female-desc">Female % (High → Low)</option>
+            <option value="female-asc">Female % (Low → High)</option>
+          </select>
+        </label>
         
-
-        {/* Sex Selector */}          <label>
-            Sex:
-            <select
-              value={sex}
-              onChange={(e) => setSex(Number(e.target.value))}
-              className="filter-input"
-            >
-              <option value={0}>Both(Sum)</option>
-              <option value={1}>Male</option>
-              <option value={2}>Female</option>
-            </select>
-          </label>
         </div>
+        <></>
       </div>
-      <DataList data={data} />
+      <DataList data={sortedData} />
     </div>  
   )
 }
